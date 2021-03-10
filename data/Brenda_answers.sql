@@ -232,14 +232,14 @@ find the teams and parks which had the top 5 average attendance per game in 2016
 Only consider parks where there were at least 10 games played. 
 Report the park name, team name, and average attendance. Repeat for the lowest 5 average attendance.
 */
-
+-- SUM or AVG? Why are the numbers the same even when multiple teams at one park?
 SELECT sub.park_name, sub.name,
 		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
-		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_game
+		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_park
 FROM
 	(SELECT h.games, p.park_name, t.name,
-	 		AVG(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
-	 		AVG(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
+	 		SUM(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
+	 		SUM(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
 	 		SUM(h.games) OVER(PARTITION BY t.name) AS gnumber_by_team,
 	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
 	FROM homegames AS h
@@ -250,9 +250,9 @@ FROM
 	WHERE year = 2016 AND games > 9
 	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance)sub
 GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
-ORDER BY avg_att_per_game DESC
-LIMIT 5
+ORDER BY avg_att_per_park DESC
 
+--for least
 SELECT sub.park_name, sub.name,
 		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
 		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_game
@@ -273,5 +273,34 @@ GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, to
 ORDER BY avg_att_per_game ASC
 LIMIT 5
 
-	
-
+/*
+Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? 
+Give their full name and the teams that they were managing when they won the award.
+*/
+--joining/duplication ISSUE
+WITH filter_nl AS(
+		SELECT DISTINCT(am.playerid), am.yearid AS year_award_nl, t.name AS team_award_nl
+		FROM awardsmanagers AS am
+		JOIN managers AS m
+		ON am.playerid = m.playerid
+		JOIN teams AS t
+		ON m.teamid = t.teamid
+		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'NL'),
+	 filter_al AS(
+		SELECT DISTINCT(am.playerid), am.yearid AS year_award_al, t.name AS team_award_al
+		FROM awardsmanagers AS am
+		JOIN managers AS m
+		ON am.playerid = m.playerid
+		JOIN teams AS t
+		ON m.teamid = t.teamid
+		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'AL')
+SELECT DISTINCT(CONCAT(p.namefirst,' ', p.namelast)) AS full_name, filter_nl.year_award_nl,  filter_nl.team_award_nl, filter_al.year_award_al, filter_al.team_award_al
+FROM filter_nl 
+INNER JOIN  people AS p
+ON filter_nl.playerid = p.playerid
+INNER JOIN filter_al 
+ON filter_al.playerid = filter_nl.playerid
+FULL JOIN teams AS t
+ON filter_nl.team_award_nl = t.teamid
+GROUP BY full_name, filter_nl.year_award_nl,  filter_nl.team_award_nl, filter_al.year_award_al, filter_al.team_award_al
+ORDER BY full_name
