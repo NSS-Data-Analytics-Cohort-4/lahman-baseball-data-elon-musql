@@ -41,16 +41,16 @@ WHERE namegiven IN
 	WHERE namegiven = 'Edward Carl')
 	
 --Using appearances - same results
-	SELECT namegiven, height, a.teamid, G_all AS games, namefirst, namelast
-FROM people AS p
-LEFT JOIN appearances AS a
+SELECT namegiven, height, a.teamid, G_all AS games, namefirst, namelast, t.name
+FROM appearances AS a
+LEFT JOIN people AS p
 ON p.playerid = a.playerid
+LEFT JOIN teams AS t
+ON a.teamid = t.teamid
 WHERE height IN
 		(SELECT MIN(height)
 		FROM people)
-GROUP BY namegiven, height, a.teamid, G_all, namefirst, namelast
-	
-
+GROUP BY namegiven, height, a.teamid, G_all, namefirst, namelast, t.name
 	
 /* 
 Q3 Find all players in the database who played at Vanderbilt University. 
@@ -161,11 +161,117 @@ SELECT *
 FROM (SELECT namefirst , namelast , yearid,
 	  SUM(b.sb) AS successful,
 	  SUM(b.sb + b.cs) AS all_tried,
-	  ROUND(SUM(b.sb) * 100.0 / SUM(b.sb + b.cs),1) AS successful_steals
+	  CONCAT(ROUND(SUM(b.sb) * 100.0 / SUM(b.sb + b.cs),1),'%') AS successful_steals
 	  FROM people AS p
 	  LEFT JOIN batting AS b
 	  ON p.playerid = b.playerid
 	  GROUP BY namefirst, namelast, yearid) AS sub
 WHERE all_tried > 19 AND yearid = 2016
 ORDER BY successful_steals DESC
+
+/*
+Q7 From 1970 – 2016, what is the largest number of wins for a team that did not win the world series? 
+What is the smallest number of wins for a team that did win the world series? 
+Doing this will probably result in an unusually small number of wins for a world series champion 
+– determine why this is the case. Then redo your query, excluding the problem year. 
+How often from 1970 – 2016 was it the case that a team with the most wins also won the world series? 
+What percentage of the time?
+*/
+
+--largest number of wins without winning the world series
+SELECT DISTINCT(yearid), teamid, w
+FROM teams
+WHERE wswin = 'N' AND yearid BETWEEN 1970 AND 2016
+ORDER BY w DESC
+
+--smallest number of wins for a team who won the world series
+SELECT DISTINCT(yearid), teamid, w
+FROM teams
+WHERE wswin = 'Y' AND yearid BETWEEN 1970 AND 2016
+ORDER BY w ASC
+
+--problem year? remove 1981??
+SELECT w, yearid, teamid
+FROM
+	(SELECT DISTINCT(yearid), teamid, w
+	FROM teams
+	WHERE wswin = 'Y' AND yearid BETWEEN 1970 AND 2016
+	ORDER BY w ASC) sub
+WHERE yearid <> 1981
+
+
+--How often from 1970 – 2016 was it the case that a team with the most wins also won the world series? 
+--What percentage of the time?
+SELECT COUNT(maxwin) AS mostwins_and_wonws, COUNT(wswin) AS countall_ws,
+		ROUND(COUNT(maxwin)*100.0/COUNT(wswin),2) AS percentage_mostwins_wonws
+FROM
+	(SELECT DISTINCT(yearid), wswin,
+		CASE WHEN wswin = 'Y'  THEN MAX(w) OVER(PARTITION BY yearid) END AS maxwin
+	FROM teams
+	WHERE yearid BETWEEN 1970 AND 2016
+	GROUP BY yearid,wswin, w
+	ORDER BY yearid DESC) AS sub
+
+--need names -->one NULL --> tie?? 1994
+SELECT if_won, COUNT(if_won), wswin
+FROM(
+		SELECT MAX(w), yearid, wswin,
+			CASE WHEN wswin = 'Y' THEN 1
+			WHEN wswin = 'N' THEN 0
+			ELSE 3 END AS if_won
+		FROM teams
+		WHERE yearid BETWEEN 1970 AND 2016
+		GROUP BY yearid, wswin) AS sub
+GROUP BY if_won , wswin
+ORDER BY if_won DESC
+
+/*
+Q8 Using the attendance figures from the homegames table, 
+find the teams and parks which had the top 5 average attendance per game in 2016 
+(where average attendance is defined as total attendance divided by number of games).
+Only consider parks where there were at least 10 games played. 
+Report the park name, team name, and average attendance. Repeat for the lowest 5 average attendance.
+*/
+
+SELECT sub.park_name, sub.name,
+		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
+		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_game
+FROM
+	(SELECT h.games, p.park_name, t.name,
+	 		AVG(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
+	 		AVG(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
+	 		SUM(h.games) OVER(PARTITION BY t.name) AS gnumber_by_team,
+	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
+	FROM homegames AS h
+	LEFT JOIN parks AS p
+	ON h.park = p.park
+	LEFT JOIN teams as t
+	ON h.team = t.teamid
+	WHERE year = 2016 AND games > 9
+	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance)sub
+GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+ORDER BY avg_att_per_game DESC
+LIMIT 5
+
+SELECT sub.park_name, sub.name,
+		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
+		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_game
+FROM
+	(SELECT h.games, p.park_name, t.name,
+	 		AVG(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
+	 		AVG(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
+	 		SUM(h.games) OVER(PARTITION BY t.name) AS gnumber_by_team,
+	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
+	FROM homegames AS h
+	LEFT JOIN parks AS p
+	ON h.park = p.park
+	LEFT JOIN teams as t
+	ON h.team = t.teamid
+	WHERE year = 2016 AND games > 9
+	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance)sub
+GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+ORDER BY avg_att_per_game ASC
+LIMIT 5
+
+	
 
