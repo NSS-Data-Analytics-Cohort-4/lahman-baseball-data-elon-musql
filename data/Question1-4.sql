@@ -119,3 +119,14 @@ GROUP BY  b.playerid, p.namefirst, p.namelast, p.namegiven,b.sb, b.cs, b.attempt
 ORDER BY success_perc DESC
 
 
+--No 8
+SELECT parks.park_name
+	, team
+	, attendance
+	, (homegames.attendance/games) AS avg_attendance
+		FROM homegames
+		INNER JOIN parks 
+		USING (park)
+WHERE year = 2016
+		AND games >= 10
+ORDER BY avg_attendance DESC
