@@ -219,37 +219,6 @@ LIMIT 5;
 /*9.Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American 
     League (AL)? Give their full name and the teams that they were managing when they won the award.*/
 	
-SELECT DISTINCT CONCAT(people.namefirst,' ',people.namelast) AS manager_name,awardsmanagers.lgid,
-teams.name
-FROM awardsmanagers
-INNER JOIN managers ON awardsmanagers.yearid=managers.yearid AND awardsmanagers.playerid=managers.playerid
-INNER JOIN people ON awardsmanagers.playerid=people.playerid
-INNER JOIN teams ON managers.teamid=teams.teamid
-WHERE teams.yearid>1960 AND awardsmanagers.playerid IN (SELECT distinct people.playerid FROM people
-INNER JOIN managers ON people.playerid=managers.playerid
-WHERE CONCAT(namefirst,' ',namelast) 
-IN (
-SELECT j.manager_name FROM(
-select j.yearid,j.lgid,CONCAT(j.first_name,' ',j.last_name) AS manager_name,managers.teamid
-FROM (select distinct yearid, lgid,awardsmanagers.playerid, people.namefirst AS first_name, people.namelast AS last_name
-FROM awardsmanagers
-INNER JOIN people 
-ON awardsmanagers.playerid=people.playerid
-WHERE lgid != 'ML' AND awardsmanagers.awardid='TSN Manager of the Year' AND lgid='AL'
-ORDER BY yearid) j
-INNER JOIN managers ON j.yearid=managers.yearid AND j.playerid=managers.playerid)j
-INTERSECT
-SELECT j2.manager_name FROM(
-select j.yearid,j.lgid,CONCAT(j.first_name,' ',j.last_name) AS manager_name,managers.teamid
-FROM (select distinct yearid, lgid,awardsmanagers.playerid, people.namefirst AS first_name, people.namelast AS last_name
-FROM awardsmanagers
-INNER JOIN people 
-ON awardsmanagers.playerid=people.playerid
-WHERE lgid != 'ML' AND awardsmanagers.awardid='TSN Manager of the Year' AND lgid='NL'
-ORDER BY yearid) j
-INNER JOIN managers ON j.yearid=managers.yearid AND j.playerid=managers.playerid)j2)) AND awardid='TSN Manager of the Year'
-ORDER BY manager_name
-
 --------------
 
 WITH filter_nl AS(
@@ -293,19 +262,19 @@ With NL As (
 		   Where awardid ='TSN Manager of the Year'
 		   AND lgid ='AL') 
 
-SELECT CONCAT(namefirst,' ',namelast) AS fullname ,m.teamid ,m.Playerid, am.yearid,am.lgid --t.name
+SELECT distinct CONCAT(namefirst,' ',namelast) AS fullname ,/*--m.teamid ,m.Playerid,*/ am.yearid,am.lgid --t.name
 FROM people AS p
 INNER JOIN NL 
-on p.playerid=NL.playerid
+ON p.playerid=NL.playerid
 INNER JOIN AL
 ON p.playerid=AL.playerid
 INNER JOIN awardsmanagers AS am
-on p.playerid= am.playerid
-INNER JOIN managers as m
+ON p.playerid= am.playerid
+/*INNER JOIN managers as m
 ON am.playerid =m.playerid
-/*INNER JOIN teams t
+INNER JOIN teams t
 ON m.teamid =t.teamid */
-GROUP BY fullname,am.lgid,m.playerid,am.yearid,m.teamid ;---t.name;
+GROUP BY fullname,am.lgid,am.yearid;--m.playerid,m.teamid,t.name;
 
 
 ---SELECT * FROM awardsmanagers;					   
