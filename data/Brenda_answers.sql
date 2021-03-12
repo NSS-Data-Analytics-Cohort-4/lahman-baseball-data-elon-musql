@@ -339,3 +339,107 @@ INNER JOIN filter_al
 ON filter_al.playerid = filter_nl.playerid
 ORDER BY full_name
 
+/*
+Q10 Analyze all the colleges in the state of Tennessee. 
+Which college has had the most success in the major leagues. 
+Use whatever metric for success you like - number of players, number of games, salaries, world series wins, etc.
+*/
+SELECT DISTINCT(sc.schoolid),
+	SUM(a.g_all) OVER(PARTITION BY cp.schoolid) AS total_games,
+	COUNT(a.playerid) OVER(PARTITION BY cp.schoolid) AS total_players,
+	SUM(s.salary) OVER(PARTITION BY cp.schoolid) AS total_salary,
+	COUNT(t.wswin) OVER(PARTITION BY cp.schoolid) AS total_wswins
+FROM collegeplaying AS cp
+JOIN  schools AS sc
+ON cp.schoolid = sc.schoolid
+JOIN appearances AS a
+ON cp.playerid = a.playerid
+JOIN salaries AS s
+ON cp.playerid = s.playerid
+JOIN teams AS t
+ON t.teamid = a.teamid
+WHERE cp.schoolid IN
+	(SELECT schoolid
+	FROM schools
+	WHERE schoolstate = 'TN')
+ORDER BY total_games DESC	--exchange with total_players  total_salary  total_ws_wins
+		
+/*
+Q11 Is there any correlation between number of wins and team salary? 
+Use data from 2000 and later to answer this question. As you do this analysis, 
+keep in mind that salaries across the whole league tend to increase together, 
+so you may want to look on a year-by-year basis.
+*/
+--salary not partitioned by year?
+SELECT DISTINCT(t.teamid) AS team, t.yearid AS year,
+	SUM(s.salary) OVER(PARTITION BY t.yearid) AS total_salary,
+	SUM(t.w)      OVER(PARTITION BY t.yearid) AS total_wins
+FROM teams AS t
+JOIN salaries AS s
+ON t.teamid = s.teamid
+WHERE t.yearid > 1999
+GROUP BY t.teamid, t.yearid, t.w, s.salary
+ORDER BY team, year DESC
+
+/*
+Q12 In this question, you will explore the connection between number of wins and attendance.
+Does there appear to be any correlation between attendance at home games and number of wins?
+Do teams that win the world series see a boost in attendance the following year? What about teams that made the playoffs? 
+Making the playoffs means either being a division winner or a wild card winner.
+*/
+--same issue with partitioning the attendance
+SELECT DISTINCT(teamid), yearid,
+		SUM(h.attendance) OVER(PARTITION BY t.teamid) AS total_attendance,
+		SUM(w) 			  OVER(PARTITION BY t.teamid) AS total_wins
+FROM teams AS t
+JOIN homegames AS h
+ON t.teamid = h.team
+ORDER BY teamid, yearid DESC
+
+--same issue
+SELECT DISTINCT(t.teamid), t.yearid, t.wswin,
+	SUM(h.attendance) OVER(PARTITION BY t.yearid) AS total_attendance,
+	SUM(w) OVER(PARTITION BY t.yearid) AS total_wins
+FROM teams AS t
+JOIN homegames AS h
+ON t.teamid = h.team
+WHERE t.wcwin = 'Y' OR t.wcwin = 'N'
+ORDER BY t.teamid, t.yearid DESC
+
+/*
+Q13 It is thought that since left-handed pitchers are more rare, causing batters to face them less often,
+that they are more effective. Investigate this claim and present evidence to either support or dispute this claim. 
+First, determine just how rare left-handed pitchers are compared with right-handed pitchers. 
+Are left-handed pitchers more likely to win the Cy Young Award? Are they more likely to make it into the hall of fame?
+*/
+--rarity
+WITH lefties AS (SELECT playerid	 						
+			     FROM people
+			     WHERE throws = 'L' AND playerid IN
+												   (SELECT playerid
+							 						FROM pitching)),
+    all_pitchers AS (SELECT playerid 
+			     FROM people
+				 WHERE playerid IN
+								 (SELECT playerid
+								 FROM pitching))
+SELECT COUNT(lefties.*) AS count_lefties, COUNT(all_pitchers.*) AS count_pitchers,
+		ROUND(COUNT(lefties.playerid) *100.0/ (COUNT(all_pitchers.playerid)),1) AS percent_lefties
+FROM people
+LEFT JOIN lefties
+ON people.playerid = lefties.playerid
+LEFT JOIN all_pitchers
+ON people.playerid = all_pitchers.playerid
+
+/*--likelyhood to win award
+JOIN awardsplayers 
+ON awardsplayers.playerid = people.playerid
+WHERE awardid = 'Cy Young Award'
+*/
+
+/*--likelyhood to enter HoF
+WHERE people.playerid IN
+						(SELECT playerid
+						FROM halloffame)
+*/
+
