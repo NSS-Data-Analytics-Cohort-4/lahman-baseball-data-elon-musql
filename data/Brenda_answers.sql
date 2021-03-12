@@ -73,7 +73,7 @@ WHERE p.playerid IN
 	ON p.playerid = cp.playerid
 	LEFT JOIN schools AS s
 	ON cp.schoolid = s.schoolid
-	WHERE s.schoolname LIKE '%anderbilt%')
+	WHERE s.schoolname ILIKE '%vanderbilt%')
 GROUP BY p.playerid, namefirst, namelast
 ORDER BY t_salary DESC
 
@@ -126,15 +126,12 @@ ORDER BY position
 Q5 Find the average number of strikeouts per game by decade since 1920. 
 Round the numbers you report to 2 decimal places. Do the same for home runs per game. 
 Do you see any trends?
-
 */
-
---might check to see if data is same from other tables
 --need to check for trends -->excel
 SELECT DISTINCT(decade), 
-	ROUND(SUM(so) OVER(PARTITION BY decade),2) AS so_by_decade,
-	ROUND(SUM(hr) OVER(PARTITION BY decade),2) AS hr_by_decade
-FROM (SELECT so, hr,
+	ROUND(AVG(so/g) OVER(PARTITION BY decade),2) AS so_by_game_by_decade,
+	ROUND(AVG(hr/g) OVER(PARTITION BY decade),2) AS hr_by_game_by_decade
+FROM (SELECT so, hr, g,
 	  CASE WHEN yearid BETWEEN 1920 AND 1929 THEN 1920
 		   WHEN yearid BETWEEN 1930 AND 1939 THEN 1930
 	  	   WHEN yearid BETWEEN 1940 AND 1949 THEN 1940
@@ -146,7 +143,24 @@ FROM (SELECT so, hr,
 	       WHEN yearid BETWEEN 2000 AND 2009 THEN 2000
 	       WHEN yearid BETWEEN 2010 AND 2019 THEN 2010
 	       ELSE 000 END AS decade
-	 FROM pitching AS p) AS sub
+	 FROM teams ) AS sub
+ORDER BY decade DESC
+
+--check for difference btn so and soa in teams
+SELECT  COUNT(soa) as so_pitcher,COUNT(so) AS so_batter,
+CASE WHEN yearid BETWEEN 1920 AND 1929 THEN 1920
+		   WHEN yearid BETWEEN 1930 AND 1939 THEN 1930
+	  	   WHEN yearid BETWEEN 1940 AND 1949 THEN 1940
+	       WHEN yearid BETWEEN 1950 AND 1959 THEN 1950
+	       WHEN yearid BETWEEN 1960 AND 1969 THEN 1960
+	       WHEN yearid BETWEEN 1970 AND 1979 THEN 1970
+	       WHEN yearid BETWEEN 1980 AND 1989 THEN 1980
+	       WHEN yearid BETWEEN 1990 AND 1999 THEN 1990
+	       WHEN yearid BETWEEN 2000 AND 2009 THEN 2000
+	       WHEN yearid BETWEEN 2010 AND 2019 THEN 2010
+	       ELSE 000 END AS decade
+FROM teams
+GROUP BY decade
 ORDER BY decade DESC
 
 /*
@@ -183,12 +197,16 @@ SELECT DISTINCT(yearid), teamid, w
 FROM teams
 WHERE wswin = 'N' AND yearid BETWEEN 1970 AND 2016
 ORDER BY w DESC
+LIMIT 10
 
 --smallest number of wins for a team who won the world series
+-- There was a strike, teams did not play in as many games compared to a regular season. 
+-- MORE INFORMATION https://www.usatoday.com/story/sports/mlb/2020/03/15/1981-mlb-season-coronavirus-delay-baseball/5054780002/
 SELECT DISTINCT(yearid), teamid, w
 FROM teams
 WHERE wswin = 'Y' AND yearid BETWEEN 1970 AND 2016
-ORDER BY w ASC
+ORDER BY w 
+LIMIT 10
 
 --problem year? remove 1981??
 SELECT w, yearid, teamid
@@ -203,7 +221,7 @@ WHERE yearid <> 1981
 --How often from 1970 – 2016 was it the case that a team with the most wins also won the world series? 
 --What percentage of the time?
 SELECT COUNT(maxwin) AS mostwins_and_wonws, COUNT(wswin) AS countall_ws,
-		ROUND(COUNT(maxwin)*100.0/COUNT(wswin),2) AS percentage_mostwins_wonws
+		CONCAT(ROUND(COUNT(maxwin)*100.0/COUNT(wswin),1),'%') AS percentage_mostwins_wonws
 FROM
 	(SELECT DISTINCT(yearid), wswin,
 		CASE WHEN wswin = 'Y'  THEN MAX(w) OVER(PARTITION BY yearid) END AS maxwin
@@ -232,32 +250,52 @@ find the teams and parks which had the top 5 average attendance per game in 2016
 Only consider parks where there were at least 10 games played. 
 Report the park name, team name, and average attendance. Repeat for the lowest 5 average attendance.
 */
--- SUM or AVG? Why are the numbers the same even when multiple teams at one park?
-SELECT sub.park_name, sub.name,
+-- Why are the numbers the same even when multiple teams at one park?
+SELECT sub.park_name, sub.team,
 		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
 		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_park
 FROM
-	(SELECT h.games, p.park_name, t.name,
-	 		SUM(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
+	(SELECT h.games, p.park_name, h.team,
+	 		SUM(h.attendance) OVER(PARTITION BY h.team) AS total_attendance_by_team,
 	 		SUM(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
-	 		SUM(h.games) OVER(PARTITION BY t.name) AS gnumber_by_team,
+	 		SUM(h.games) OVER(PARTITION BY h.team) AS gnumber_by_team,
 	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
 	FROM homegames AS h
 	LEFT JOIN parks AS p
 	ON h.park = p.park
-	LEFT JOIN teams as t
-	ON h.team = t.teamid
+	--LEFT JOIN teams as t
+	--ON h.team = t.teamid
 	WHERE year = 2016 AND games > 9
-	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance)sub
-GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+	GROUP BY p.park_name, h.park, h.games, h.team, h.team, h.attendance) AS sub
+GROUP BY sub.park_name, sub.team, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
 ORDER BY avg_att_per_park DESC
 
 --for least
-SELECT sub.park_name, sub.name,
+SELECT sub.park_name, sub.team,
+		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
+		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_park
+FROM
+	(SELECT h.games, p.park_name, h.team,
+	 		SUM(h.attendance) OVER(PARTITION BY h.team) AS total_attendance_by_team,
+	 		SUM(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
+	 		SUM(h.games) OVER(PARTITION BY h.team) AS gnumber_by_team,
+	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
+	FROM homegames AS h
+	LEFT JOIN parks AS p
+	ON h.park = p.park
+	--LEFT JOIN teams as t
+	--ON h.team = t.teamid
+	WHERE year = 2016 AND games > 9
+	GROUP BY p.park_name, h.park, h.games, h.team, h.team, h.attendance) AS sub
+GROUP BY sub.park_name, sub.team, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+ORDER BY avg_att_per_park 
+
+--w duplications from team name -->teams table -- doesn't work
+SELECT sub.park_name, sub.name, sub.team,
 		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
 		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_game
 FROM
-	(SELECT h.games, p.park_name, t.name,
+	(SELECT h.games, p.park_name, t.name, h.team,
 	 		AVG(h.attendance) OVER(PARTITION BY t.name) AS total_attendance_by_team,
 	 		AVG(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
 	 		SUM(h.games) OVER(PARTITION BY t.name) AS gnumber_by_team,
@@ -268,39 +306,36 @@ FROM
 	LEFT JOIN teams as t
 	ON h.team = t.teamid
 	WHERE year = 2016 AND games > 9
-	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance)sub
-GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+	GROUP BY p.park_name, h.park, h.games, h.team, t.name, h.attendance, h.team)sub
+GROUP BY sub.park_name, sub.name, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park, sub.team
 ORDER BY avg_att_per_game ASC
 LIMIT 5
 
 /*
-Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? 
+9. Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? 
 Give their full name and the teams that they were managing when they won the award.
 */
---joining/duplication ISSUE
 WITH filter_nl AS(
-		SELECT DISTINCT(am.playerid), am.yearid AS year_award_nl, t.name AS team_award_nl
+		SELECT DISTINCT(am.playerid), am.yearid AS year_award_nl, m.teamid --,t.name AS team_award_nl
 		FROM awardsmanagers AS am
 		JOIN managers AS m
 		ON am.playerid = m.playerid
 		JOIN teams AS t
 		ON m.teamid = t.teamid
-		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'NL'),
+		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'NL' AND m.yearid = am.yearid),
 	 filter_al AS(
-		SELECT DISTINCT(am.playerid), am.yearid AS year_award_al, t.name AS team_award_al
+		SELECT DISTINCT(am.playerid), am.yearid AS year_award_al, m.teamid --,t.name AS team_award_al
 		FROM awardsmanagers AS am
 		JOIN managers AS m
 		ON am.playerid = m.playerid
 		JOIN teams AS t
 		ON m.teamid = t.teamid
-		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'AL')
-SELECT DISTINCT(CONCAT(p.namefirst,' ', p.namelast)) AS full_name, filter_nl.year_award_nl,  filter_nl.team_award_nl, filter_al.year_award_al, filter_al.team_award_al
+		WHERE am.awardid = 'TSN Manager of the Year' AND am.lgid = 'AL' AND m.yearid = am.yearid)
+SELECT DISTINCT(CONCAT(p.namefirst,' ', p.namelast)) AS full_name, filter_nl.year_award_nl, filter_nl.teamid, /*filter_nl.team_award_nl,*/filter_al.year_award_al, filter_al.teamid/*,filter_al.team_award_al*/
 FROM filter_nl 
 INNER JOIN  people AS p
 ON filter_nl.playerid = p.playerid
 INNER JOIN filter_al 
 ON filter_al.playerid = filter_nl.playerid
-FULL JOIN teams AS t
-ON filter_nl.team_award_nl = t.teamid
-GROUP BY full_name, filter_nl.year_award_nl,  filter_nl.team_award_nl, filter_al.year_award_al, filter_al.team_award_al
 ORDER BY full_name
+
