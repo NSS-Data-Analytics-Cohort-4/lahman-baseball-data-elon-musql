@@ -69,9 +69,9 @@ ON p.playerid = sal.playerid
 WHERE p.playerid IN
 	(SELECT DISTINCT(p.playerid)
 	FROM people AS p
-	LEFT JOIN collegeplaying AS cp
+	INNER JOIN collegeplaying AS cp
 	ON p.playerid = cp.playerid
-	LEFT JOIN schools AS s
+	INNER JOIN schools AS s
 	ON cp.schoolid = s.schoolid
 	WHERE s.schoolname ILIKE '%vanderbilt%')
 GROUP BY p.playerid, namefirst, namelast
@@ -229,6 +229,24 @@ FROM
 	WHERE yearid BETWEEN 1970 AND 2016
 	GROUP BY yearid,wswin, w
 	ORDER BY yearid DESC) AS sub
+	
+	--kristen's
+	WITH winners as	(	SELECT teamid as champ, 
+				           yearid, w as champ_w
+	  				FROM teams
+	  				WHERE 	(wswin = 'Y')
+				 			AND (yearid BETWEEN 1970 AND 2016) ),
+max_wins as (	SELECT yearid, 
+			           max(w) as maxw
+	  			FROM teams
+	  			WHERE yearid BETWEEN 1970 AND 2016
+				GROUP BY yearid)
+SELECT 	COUNT(*) AS all_years,
+		COUNT(CASE WHEN champ_w = maxw THEN 'Yes' end) as max_wins_by_champ,
+		to_char((COUNT(CASE WHEN champ_w = maxw THEN 'Yes' end)/(COUNT(*))::real)*100,'99.99%') as Percent
+FROM 	winners LEFT JOIN max_wins
+		USING(yearid)
+
 
 --need names -->one NULL --> tie?? 1994
 SELECT if_won, COUNT(if_won), wswin
@@ -251,11 +269,11 @@ Only consider parks where there were at least 10 games played.
 Report the park name, team name, and average attendance. Repeat for the lowest 5 average attendance.
 */
 -- Why are the numbers the same even when multiple teams at one park?
-SELECT sub.park_name, sub.team,
+SELECT sub.park_name, sub.team, sub.name,
 		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
 		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_park
 FROM
-	(SELECT h.games, p.park_name, h.team,
+	(SELECT h.games, p.park_name, h.team,t.name,
 	 		SUM(h.attendance) OVER(PARTITION BY h.team) AS total_attendance_by_team,
 	 		SUM(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
 	 		SUM(h.games) OVER(PARTITION BY h.team) AS gnumber_by_team,
@@ -263,32 +281,13 @@ FROM
 	FROM homegames AS h
 	LEFT JOIN parks AS p
 	ON h.park = p.park
-	--LEFT JOIN teams as t
-	--ON h.team = t.teamid
+	LEFT JOIN teams as t
+	ON h.team = t.teamid AND h.year = t.yearid
 	WHERE year = 2016 AND games > 9
-	GROUP BY p.park_name, h.park, h.games, h.team, h.team, h.attendance) AS sub
-GROUP BY sub.park_name, sub.team, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
+	GROUP BY p.park_name, h.park, h.games, h.team, h.team, h.attendance,t.name) AS sub
+GROUP BY sub.park_name, sub.team, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park, sub.name
 ORDER BY avg_att_per_park DESC
 
---for least
-SELECT sub.park_name, sub.team,
-		ROUND(total_attendance_by_team /gnumber_by_team,1) AS avg_att_per_team, 
-		ROUND(total_attendance_by_park /gnumber_by_park,1) AS avg_att_per_park
-FROM
-	(SELECT h.games, p.park_name, h.team,
-	 		SUM(h.attendance) OVER(PARTITION BY h.team) AS total_attendance_by_team,
-	 		SUM(h.attendance) OVER(PARTITION BY h.park) AS total_attendance_by_park,
-	 		SUM(h.games) OVER(PARTITION BY h.team) AS gnumber_by_team,
-	 		SUM(h.games) OVER(PARTITION BY h.park) AS gnumber_by_park
-	FROM homegames AS h
-	LEFT JOIN parks AS p
-	ON h.park = p.park
-	--LEFT JOIN teams as t
-	--ON h.team = t.teamid
-	WHERE year = 2016 AND games > 9
-	GROUP BY p.park_name, h.park, h.games, h.team, h.team, h.attendance) AS sub
-GROUP BY sub.park_name, sub.team, total_attendance_by_team , gnumber_by_team, total_attendance_by_park ,gnumber_by_park
-ORDER BY avg_att_per_park 
 
 --w duplications from team name -->teams table -- doesn't work
 SELECT sub.park_name, sub.name, sub.team,
@@ -349,7 +348,7 @@ SELECT DISTINCT(sc.schoolid),
 	COUNT(a.playerid) OVER(PARTITION BY cp.schoolid) AS total_players,
 	SUM(s.salary) OVER(PARTITION BY cp.schoolid) AS total_salary,
 	COUNT(t.wswin) OVER(PARTITION BY cp.schoolid) AS total_wswins
-FROM collegeplaying AS cp
+FROM (SELECT DISTINCT playerid, schoolid FROM collegeplaying) AS cp
 JOIN  schools AS sc
 ON cp.schoolid = sc.schoolid
 JOIN appearances AS a
@@ -357,12 +356,30 @@ ON cp.playerid = a.playerid
 JOIN salaries AS s
 ON cp.playerid = s.playerid
 JOIN teams AS t
-ON t.teamid = a.teamid
+ON t.teamid = a.teamid AND t.yearid = a.yearid
 WHERE cp.schoolid IN
 	(SELECT schoolid
 	FROM schools
 	WHERE schoolstate = 'TN')
 ORDER BY total_games DESC	--exchange with total_players  total_salary  total_ws_wins
+	
+	--richie's
+SELECT 
+	schoolname, 
+	schoolstate, 
+	COUNT(DISTINCT p.playerid) AS n_players, 
+	SUM(COALESCE(salary,0)) AS total_salaries
+FROM schools AS s
+LEFT JOIN (SELECT DISTINCT playerid, schoolid FROM collegeplaying) AS cp
+ON s.schoolid = cp.schoolid
+LEFT JOIN people AS p
+ON cp.playerid = p.playerid
+LEFT JOIN salaries AS sl
+ON p.playerid = sl.playerid
+WHERE schoolstate = 'TN'
+GROUP BY schoolname, schoolstate
+ORDER BY 4 DESC;
+		
 		
 /*
 Q11 Is there any correlation between number of wins and team salary? 
@@ -380,6 +397,24 @@ ON t.teamid = s.teamid
 WHERE t.yearid > 1999
 GROUP BY t.teamid, t.yearid, t.w, s.salary
 ORDER BY team, year DESC
+
+
+--teng's
+SELECT t.teamid, t.yearid, SUM(t.w) AS wins_year, CONCAT(ROUND(CAST(s.yearly_salary/1000000.00 AS numeric),2), 'M') AS salary_mil, ROUND(CAST(s.yearly_salary/1000000 AS numeric)/SUM(t.w),2) AS salary_mil_per_win
+FROM teams AS t
+LEFT JOIN (
+	SELECT teamid, yearid, SUM(salary) AS yearly_salary
+	FROM salaries
+	WHERE yearid >= 2000
+	GROUP BY teamid, yearid
+	ORDER BY teamid, yearid) AS s
+ON t.teamid = s.teamid AND t.yearid = s.yearid
+WHERE t.yearid >= 2000
+GROUP BY t.teamid, t.yearid, s.yearly_salary
+ORDER BY t.teamid, t.yearid;
+--I can also order by wins or the salary per win column to help conceptulize it.
+
+
 
 /*
 Q12 In this question, you will explore the connection between number of wins and attendance.
@@ -406,6 +441,57 @@ ON t.teamid = h.team
 WHERE t.wcwin = 'Y' OR t.wcwin = 'N'
 ORDER BY t.teamid, t.yearid DESC
 
+--richie's
+--Q12(A)
+
+SELECT 
+	yearid,
+	park, 
+	franchid, 
+	ROUND(((w*1.0)/(g*1.0)),2) AS win_perc,
+	wswin,
+	attendance,
+	RANK() OVER(PARTITION BY yearid ORDER BY attendance DESC)AS attendance_rank_year
+FROM teams
+WHERE yearid BETWEEN 1990 AND 2015
+ORDER BY win_perc DESC, attendance_rank_year;
+
+--Q12(B)
+
+SELECT 
+	park, 
+	franchid,
+	yearid,
+	attendance,
+	LEAD(attendance) OVER(PARTITION BY park ORDER BY yearid) AS attendance_following_year,
+	LEAD(attendance) OVER(PARTITION BY park ORDER BY yearid) - attendance AS change_in_attendance,
+	wswin,
+	lgwin,
+	divwin,
+	wcwin
+FROM teams
+WHERE yearid BETWEEN 2000 AND 2015
+ORDER BY wswin DESC, yearid;
+
+--joshua's
+WITH w_att_rk AS (
+SELECT yearid,
+		teamid,
+		w,
+		attendance / ghome AS avg_h_att,
+		RANK() OVER(PARTITION BY yearid ORDER BY w) AS w_rk,
+		RANK() OVER(PARTITION BY yearid ORDER BY attendance / ghome) AS avg_h_att_rk
+FROM teams
+WHERE attendance / ghome IS NOT NULL
+AND yearid >= 1961 						--MLB institutes 162 game season
+ORDER BY yearid, teamid
+)
+SELECT avg_h_att_rk,
+		ROUND(AVG(w_rk), 1) AS avg_w_rk
+FROM w_att_rk
+GROUP BY avg_h_att_rk
+ORDER BY avg_h_att_rk
+
 /*
 Q13 It is thought that since left-handed pitchers are more rare, causing batters to face them less often,
 that they are more effective. Investigate this claim and present evidence to either support or dispute this claim. 
@@ -431,8 +517,8 @@ ON people.playerid = lefties.playerid
 LEFT JOIN all_pitchers
 ON people.playerid = all_pitchers.playerid
 
-/*--likelyhood to win award
-JOIN awardsplayers 
+--likelyhood to win award
+/*JOIN awardsplayers 
 ON awardsplayers.playerid = people.playerid
 WHERE awardid = 'Cy Young Award'
 */
